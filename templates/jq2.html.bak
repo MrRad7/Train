@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+  <head lang="en">
+    <meta charset="UTF-8">
+    <title>Train Controller</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- styles -->
+	<script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+
+     <script>
+        $(document).ready(function(){
+		$("#lightbutton1").on("click", function(){
+                    $(this).css('background-color', 'pink');
+                });
+        });
+    </script>
+                          
+  </head>
+  <body>
+    <div class="container">
+      <h1>Train Controller</h1>
+      <br>
+      <div id="content"></div>
+    </div>
+
+    <div id="event"></div>
+    
+    <!-- scripts -->
+   
+                          
+        <script type="text/javascript">
+
+         var eventOutputContainer = document.getElementById("event");
+         var evtSrc = new EventSource("/subscribe");
+
+         evtSrc.onmessage = function(e) {
+             //console.log(e.data);
+             eventOutputContainer.innerHTML = e.data;
+             $("#myTextarea").append(e.data + "\n");
+         };
+
+         </script>
+         
+	<script>
+	$(document).ready(function(){
+		$("#button1").click(function(){
+			$("div").animate({left: '250px'});
+		});
+	});
+	</script>
+
+	<script>
+	$(document).ready(function(){
+		$("#button2").click(function(){
+			//$("#myTextarea").val("MIKE");
+			$("#myTextarea").append("MIKE\n");
+		});
+	});
+	</script>
+
+        <script>
+                           
+	$(document).ready(function(){
+		$("#lightbutton").click(function(){
+                        var yellow = "rgb(255, 255, 0)";
+                        var default_color = "rgb(247, 246, 246)";
+                        var current_color = $(this).css('backgroundColor');
+
+                        if (current_color == yellow){
+                            //turn lights off
+                            $("#myTextarea").append("GRAY" + "\n");
+                            $(this).css('background-color',default_color);
+                        } else {
+                            //turn lights on
+                            $(this).css('background-color','yellow');
+                            //$.post("/lights",
+                            //       {state: "ON"});
+                        }   
+                        
+                        $("#myTextarea").append(current_color + "\n");	
+		});
+	});
+	</script>
+
+	
+            
+	
+	
+	<script>
+	//http://www.w3schools.com/jquery/jquery_dom_add.asp
+	function myFunction() {
+	    var x = document.createElement("TEXTAREA");
+            x.rows = "30";
+	    var t = document.createTextNode("At w3schools.com you will learn how to make a website.");
+	    x.appendChild(t);
+	    document.body.appendChild(x);
+	}
+	</script>
+
+	
+	
+        <input id="lightbutton1" type="submit" value="Lights"</input>
+        <br>
+        <input id="lightbutton" type="submit" value="Lights Submit"</input>
+        <br>
+	<button id="button1">Start Animation</button>
+	<p>
+	<button id="button2">Add text</button>
+
+	<p>
+	<textarea id="myTextarea" rows=20 cols=100>342 Alvin Road Ducksburg</textarea>
+
+	<p>
+	<div style="background:#98bf21;height:100px;width:100px;position:absolute;">
+</div>
+  </body>
+</html>
