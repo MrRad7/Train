@@ -1,4 +1,10 @@
-#!/usr/bin/python
+#!/home/pi/trainsite/bin/python
+##!/usr/bin/python
+# Version 2
+# Changelog:
+# Made a separate app for gertbot controls.
+# Removed unecessary code.
+#
 from __future__ import print_function
 import os
 import sys
@@ -6,6 +12,7 @@ import time
 import random
 import RPi.GPIO as GPIO
 import requests
+#apt-get install libxml2-dev libxslt-dev python-dev 
 from lxml import html
 import re
 from threading import Thread
@@ -29,6 +36,8 @@ from ouimeaux.environment import Environment
 from ouimeaux.signals import statechange, receiver
 #pika is for rabbitMQ
 import pika
+import uuid
+import psutil
 
 #requires fping
 
@@ -46,6 +55,8 @@ state_filename = "/home/pi/train_state.txt"
 gertbot_dir = "/home/pi/gertbot/" #this is the directory with the binary command files for gertbot
 gertbot_tty = "/dev/ttyAMA0" #the logical tty used by the gertbot board
 mycommand = ''
+
+rabbitmq_pid_file = "/var/run/rabbitmq/pid"
 
 # mode 1 = just do the train circle
 # mode 2 = just do the train straight shuttle
@@ -863,7 +874,6 @@ def gertbot_command(mycommand):
     elif str(mycommand) == "start_a": 
         gertbot_file = str(gertbot_dir) + "start_a.bin"
         
-    
         
     print("GERTBOT command is=", mycommand, file=sys.stderr)
 
@@ -880,6 +890,57 @@ def gertbot_wrapper(mycommand):
     async_gertbot.call(mycommand)
     async_gertbot.wait()
     return 0
+
+
+class GertbotRpcClient(object):
+    def __init__(self):
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(
+                host='localhost'))
+
+        self.channel = self.connection.channel()
+
+        result = self.channel.queue_declare(exclusive=True)
+        self.callback_queue = result.method.queue
+
+        self.channel.basic_consume(self.on_response, no_ack=True,
+                                   queue=self.callback_queue)
+
+    def on_response(self, ch, method, props, body):
+        if self.corr_id == props.correlation_id:
+            self.response = str(body.decode("utf-8","strict"))
+
+    def call(self, n):
+        self.response = None
+        self.corr_id = str(uuid.uuid4())
+        self.channel.basic_publish(exchange='',
+                                   routing_key='gertbot_queue',
+                                   properties=pika.BasicProperties(
+                                         reply_to = self.callback_queue,
+                                         correlation_id = self.corr_id,
+                                         ),
+                                   body=str(n))
+        while self.response is None:
+            self.connection.process_data_events()
+        return str(self.response)
+
+def check_rabbitmq():
+    # Make sure that RabbitMQ is running!
+    if os.path.exists(rabbitmq_pid_file):
+            try:
+                f = open(rabbitmq_pid_file, 'r')    
+            except:
+                print("Cannot open pid file for RabbitMQ (%s), exiting." % (rabbitmq_pid_file), file=sys.stderr)
+                exit()
+            else:
+                rabbitmq_pid = f.read()
+                f.close()
+                #output("PID=%s" % (rabbitmq_pid))
+                if not psutil.pid_exists(int(rabbitmq_pid)):
+                    print("RabbitMQ-server doesn't seem to be running, exiting.", file=sys.stderr)
+                    exit()
+    else:
+        print("PID file does not exist (%s), exiting." % (rabbitmq_pid_file), file=sys.stderr)
+        exit()    
 
 ##### MAIN SECTION #####################
 if __name__ == "__main__":
@@ -995,7 +1056,7 @@ if __name__ == "__main__":
     # put some error checking around this
     env = Environment()
     env.start()
-    #env.discover(3)
+    env.discover(3) #used to discover WeMo devices on the network
     switch = env.get_switch('Train')
     #switch = env.get_switch('WeMo Insight Lamp')
     state = switch.get_state()
@@ -1016,70 +1077,34 @@ if __name__ == "__main__":
     update_status_thread.setDaemon(True)
     update_status_thread.start()
 
-    #start gertbot listener up
-    #gertbot_q = Queue.Queue()
     
-    #gertbot_process = multiprocessing.Process(target=gertbot_command, args=(gertbot_q,))
-    #gertbot_process.daemon=True
-    #gertbot_process.start()
-
-    #print("Trying Async_Square.", file=sys.stderr)
-    #async_square = AsyncFactory(square, cb_func)
-    #async_square.call(1)
-    #async_square.call(2)
-    #async_square.call(3)
-    #async_square.wait()
-    #print("Finished Async_Square.", file=sys.stderr)
-
-    #async_gertbot = GertbotFactory(gertbot_command, gertbot_cb_func)
-    #async_gertbot.call("stop_all")
-    #gertbot_q.put("stop_all")
-    #Gertbot_thread = Thread(target = gertbot_command( gertbot_q ))
-    #gertbot_command("stop_all")
-    #gertbot_wrapper("stop_all")
-    #time.sleep(2)
-    #gertbot_q.put("setup")
-    #async_gertbot.call("setup")
-    #gertbot_command("setup")
-    #gertbot_wrapper("setup")
-    #time.sleep(2)
-    #async_gertbot.wait()
-
     # Reset to known state!
     # Need to save to a file
     # This part is only run when the program first starts!
     current_wemo_state = 0 #set initial wemo state to off
-    
-    
+
+    #verify that rabbitmq is running before we go further
+    check_rabbitmq()
+    gertbot_rpc = GertbotRpcClient()
+    print(" [x] Requesting GertBot(status)")
+    #command = start_a start_b stop status config version read_error emergency_stop
+    command_json = json.dumps({"command" : 'status'}, sort_keys=True)
+
+    print("CommandJSON= %s" % (command_json), file=sys.stderr)
+    response = gertbot_rpc.call(command_json)
+    #gertbot_rpc.close()
+    print(" [.] Got %s" % (response), file=sys.stderr)
 
     #sys.exit()
     while True:
             try:
                     time.sleep(0.5)
-                    #print "here"
-                    
-                    #msg = str(time.time()) + "Mike"
-                    #msg = "Mike"
-                    #print "MSG:", msg
-                    #outputFunction(msg)
-
-                    #request_base = "http://localhost:5000/publish"
-                    #request_code = request_base + "01" #turn on relay 1
-                    #page = requests.get(request_base)
-                    #print page.text
-                    #tree = html.fromstring(page.text)
-                    #relays1 = tree.xpath('//p//text()')
-                   
                     
             except KeyboardInterrupt:
                     GPIO.cleanup()	
                     STOP = 1
+                    
                     join_all_threads()
-                    #async_gertbot.wait()
-                    #gertbot_process.join() #kill gertbot process
-                    #gertbot_process.terminate()
-                    #CPUTemp_thread.join()
-                    #thread.join()
 
                     gertbot_wrapper("stop_all")
                     #turn off relays
@@ -1088,4 +1113,5 @@ if __name__ == "__main__":
                     section_control(3,"OFF")
                     
                     print("Loop count=%s" % (loop_count), file=sys.stderr)
+                    gertbot_rpc.close(reply_code=200, reply_text='Normal shutdown')
                     sys.exit()
