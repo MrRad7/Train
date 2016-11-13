@@ -1,6 +1,6 @@
 #!/home/pi/trainsite/bin/python
 ##!/usr/bin/python
-# Version 2
+# Version 2.1
 # Changelog:
 # Made a separate app for gertbot controls.
 # Removed unecessary code.
@@ -685,12 +685,13 @@ def operating_mode():
             # Turn on loop tracks (Relay5 and Relay7)
             section_control(1,"ON")
             section_control(3,"ON")
-            # Setup gertbot
-            gertbot_wrapper("stop_all")
+            
+            
+            gertbot_wrapper("stop")
+            
             time.sleep(2)
-            gertbot_wrapper("setup")
-            time.sleep(2)
-            gertbot_wrapper("start_a")
+        
+            gertbot_wrapper("start_b")
     elif mode == 2:
             print("Just doing the straight shuttle", file=sys.stderr)
             # Turn off loop tracks (Relay5 and Relay7)
@@ -760,7 +761,7 @@ def update_function():
             operating_mode()
         elif str(state) == '0': #power is now off
                 print("Turning off power...", file=sys.stderr)
-                gertbot_wrapper("stop_all")
+                gertbot_wrapper("stop")
                 #turn off relays
                 section_control(1,"OFF")
                 section_control(2,"OFF")
@@ -805,91 +806,17 @@ def start_webserver():
         # Then visit http://localhost:5000 to subscribe 
         # and send messages by visiting http://localhost:5000/publish
 
+   
 
-class GertbotFactory:
-    def __init__(self, func, gertbot_cb_func):
-        self.func = func
-        self.gertbot_cb_func = gertbot_cb_func
-        self.pool = multiprocessing.Pool()
-
-    def call(self, *args, **kwargs):
-        self.pool.apply_async(self.func, args, kwargs, self.gertbot_cb_func)
-
-    def wait(self):
-        self.pool.close()
-        self.pool.join()
-
-def gertbot_cb_func(x):
-    print("Gertbot return value = ", x, file=sys.stderr)
-    
-
-class AsyncFactory:
-    def __init__(self, func, cb_func):
-        self.func = func
-        self.cb_func = cb_func
-        self.pool = multiprocessing.Pool()
-
-    def call(self, *args, **kwargs):
-        self.pool.apply_async(self.func, args, kwargs, self.cb_func)
-
-    def wait(self):
-        self.pool.close()
-        self.pool.join()
-
-
-def square(x):
-    sleep_duration = random.randint(1,5)
-    #print "PID: %d \t Value: %d \t Sleep: %d" % (os.getpid(), x, sleep_duration)
-    time.sleep(sleep_duration)
-    return x*x
-
-def cb_func(x):
-    print("X = ", x, file=sys.stderr)
-
-
-def gertbot_command(mycommand): 
-    #mycommand = gertbot_q.get()
-    mycommand = mycommand.strip()
-    
-    print("INSIDE Gertbot command is ", mycommand, file=sys.stderr)
-    print("GERTBOT_DIR = ", gertbot_dir, file=sys.stderr)
-    
-
-    #if not mycommand:
-    #    print("No command!!!", file=sys.stderr)
-    #    return 0
-
-
-    #gertbot_file =  str(gertbot_dir) + "MIKE"
-    #default
-    gertbot_file = str(gertbot_dir) + "stop_all.bin"
-
-    if str(mycommand) == "stop_all":
-        gertbot_file = str(gertbot_dir) + "stop_all.bin"
-
-    if str(mycommand) == "stop":
-        gertbot_file = str(gertbot_dir) + "stop_motor1.bin"
-    elif str(mycommand) == "setup":
-        gertbot_file = str(gertbot_dir) + "setup_gertbot.bin"
-    elif str(mycommand) == "start_a": 
-        gertbot_file = str(gertbot_dir) + "start_a.bin"
-        
-        
-    print("GERTBOT command is=", mycommand, file=sys.stderr)
-
-    print("HERE NOW = ",gertbot_file, file=sys.stderr)
-    results = subprocess.check_output(["/bin/cp", gertbot_file, gertbot_tty])
-    ##print("Result of = ",gertbot_file, results, file=sys.stderr)
-    print("Result of %s = %s" % (gertbot_file, results), file=sys.stderr)
-    
-    return 0
 
 def gertbot_wrapper(mycommand):
-    async_gertbot = GertbotFactory(gertbot_command, gertbot_cb_func)
-    #async_gertbot.call("stop_all")
-    async_gertbot.call(mycommand)
-    async_gertbot.wait()
+    print("GertbotCommand = %s\n" % (mycommand))
+    command_json = json.dumps({"command" : str(mycommand)}, sort_keys=True)
+    response = gertbot_rpc.call(command_json)
+    print("Response of %s = %s" % (mycommand, response), file=sys.stderr)
+    
     return 0
+
 
 
 class GertbotRpcClient(object):
@@ -1092,7 +1019,6 @@ if __name__ == "__main__":
 
     print("CommandJSON= %s" % (command_json), file=sys.stderr)
     response = gertbot_rpc.call(command_json)
-    #gertbot_rpc.close()
     print(" [.] Got %s" % (response), file=sys.stderr)
 
     #sys.exit()
@@ -1106,12 +1032,13 @@ if __name__ == "__main__":
                     
                     join_all_threads()
 
-                    gertbot_wrapper("stop_all")
+                    #make sure that train is stopped
+                    gertbot_wrapper("stop")
                     #turn off relays
                     section_control(1,"OFF")
                     section_control(2,"OFF")
                     section_control(3,"OFF")
                     
                     print("Loop count=%s" % (loop_count), file=sys.stderr)
-                    gertbot_rpc.close(reply_code=200, reply_text='Normal shutdown')
+        
                     sys.exit()
