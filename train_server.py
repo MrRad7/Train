@@ -2,6 +2,7 @@
 ##!/usr/bin/python
 # Version 2.1
 # Changelog:
+# Added functionality for gertbot_app and rabbitMQ
 # Made a separate app for gertbot controls.
 # Removed unecessary code.
 #
@@ -38,25 +39,16 @@ from ouimeaux.signals import statechange, receiver
 import pika
 import uuid
 import psutil
+from ConfigParser import SafeConfigParser
 
 #requires fping
 
-#wemo is the "smart" switch that the train transformer plugs into
-wemo_ip = "192.168.1.191"  #this also gets checked later
-wemo_mac = "EC:1A:59:F7:54:ED"
 
-#relay_server is a group of relays with TCP/IP support
-relay_server = "192.168.1.95" #this also gets checked later
-relay_server_port = "30000"
+config_file = 'train_server.config'
 
-log_filename = "/home/pi/train_log.log"
-state_filename = "/home/pi/train_state.txt"
 
-gertbot_dir = "/home/pi/gertbot/" #this is the directory with the binary command files for gertbot
-gertbot_tty = "/dev/ttyAMA0" #the logical tty used by the gertbot board
 mycommand = ''
 
-rabbitmq_pid_file = "/var/run/rabbitmq/pid"
 
 # mode 1 = just do the train circle
 # mode 2 = just do the train straight shuttle
@@ -812,7 +804,13 @@ def start_webserver():
 def gertbot_wrapper(mycommand):
     print("GertbotCommand = %s\n" % (mycommand))
     command_json = json.dumps({"command" : str(mycommand)}, sort_keys=True)
-    response = gertbot_rpc.call(command_json)
+
+    try:
+        response = gertbot_rpc.call(command_json)
+    except:
+        print("Gertbot_rpc.call failed for (%s)\n" % (mycommand), file=sys.stderr)
+        return -1
+    
     print("Response of %s = %s" % (mycommand, response), file=sys.stderr)
     
     return 0
@@ -872,6 +870,23 @@ def check_rabbitmq():
 ##### MAIN SECTION #####################
 if __name__ == "__main__":
     print("Running train server.", file=sys.stderr)
+
+    #parse config file
+    parser = SafeConfigParser()
+    
+    try:
+        parser.read(config_file)
+    except:
+        print("Cannot open configuration file: (%s); exiting." % (config_file), file=sys.stderr)
+
+    wemo_ip = parser.get('train_server', 'wemo_ip')
+    wemo_mac = parser.get('train_server', 'wemo_mac')
+    relay_server = parser.get('train_server', 'relay_server')
+    relay_server_port = parser.get('train_server', 'relay_server_port')
+    log_filename = parser.get('train_server', 'log_filename')
+    state_filename = parser.get('train_server', 'state_filename')
+    rabbitmq_pid_file = parser.get('train_server', 'rabbitmq_pid_file')
+    
 
     #open log file
     try:
@@ -993,7 +1008,6 @@ if __name__ == "__main__":
     CPUTemp_thread = Thread(target = getCPUtemperature_thread)
     CPUTemp_thread.setDaemon(True)
     CPUTemp_thread.start()
-    #CPUTemp_thread.join()
 
     TrainSpeed_thread = Thread(target = getTrainSpeed_thread)
     TrainSpeed_thread.setDaemon(True)
