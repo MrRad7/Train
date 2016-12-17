@@ -1,11 +1,7 @@
 #!/home/pi/trainsite/bin/python
 ##!/usr/bin/python
 # Version 2.1
-# Changelog:
-# Added functionality for gertbot_app and rabbitMQ
-# Made a separate app for gertbot controls.
-# Removed unecessary code.
-#
+
 from __future__ import print_function
 import os
 import sys
@@ -46,9 +42,8 @@ from ConfigParser import SafeConfigParser
 
 config_file = 'train_server.config'
 
-
+# Set initial/default values
 mycommand = ''
-
 
 # mode 1 = just do the train circle
 # mode 2 = just do the train straight shuttle
@@ -170,6 +165,7 @@ def lights(data):
         #    outputFunction("DATA")
         if data == "ON":
             print("Lights ON", file=sys.stderr)
+            logging.info("Lights ON")
             request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY1_ON
             # 00 to turn lights off
             page = requests.get(request_base)
@@ -177,6 +173,7 @@ def lights(data):
             #print page.text
         elif data == "OFF":
             print("Lights OFF", file=sys.stderr)
+            logging.info("Lights OFF")
             request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY1_OFF
             #request_code = request_base + "01" #turn on relay 1
             page = requests.get(request_base)
@@ -190,11 +187,13 @@ def lights(data):
 @app.route("/power/<data>", methods=['POST'])
 def power(data):
     if data == "ON":
-        print("Power ON", file=sys.stderr)
+        #print("Power ON", file=sys.stderr)
+        logging.info("Power ON")
         # read state and initialize relays
         switch.on()
     elif data == "OFF":
         print("Power OFF", file=sys.stderr)
+        logging.info("Power OFF")
         #write state
         switch.off()
     else:
@@ -209,9 +208,11 @@ def dash_button():
 
     #get wemo status
     state = switch.get_state()
-    print("DashButton WeMo state is ", state, file=sys.stderr)
-    print("DashButton Current state is ", current_wemo_state, file=sys.stderr)
-
+    #print("DashButton WeMo state is ", state, file=sys.stderr)
+    logging.debug("DashButton WeMo state is %s", state)
+    #print("DashButton Current state is ", current_wemo_state, file=sys.stderr)
+    logging.debug("DashButton Current state is %s", current_wemo_state)
+    
     if str(state) in ['1', '8']:
             #if state in [1, 8]: #1 and 8 both signify power is ON
             print("Turning power off...", file=sys.stderr)
@@ -226,11 +227,14 @@ def dash_button():
 @app.route("/startstop/<data>", methods=['POST'])
 def startstop(data):
         if data == "START":
-            print("Starting...", file=sys.stderr)
+            #print("Starting...", file=sys.stderr)
+            logging.info("Starting...")
         elif data == "STOP":
-            print("Stopping", file=sys.stderr)
+            #print("Stopping", file=sys.stderr)
+            logging.info("Stopping")
         else:
-            print("ERROR", file=sys.stderr)
+            #print("ERROR", file=sys.stderr)
+            logging.error("ERROR")
                 
         return "OK"
     
@@ -309,7 +313,8 @@ def mag_sensor1_callback(channel):
 	#reduce false positives
 	time.sleep(0.05)
 	if GPIO.input(mag_sensor1) != GPIO.LOW:
-                print("False Positive on Sensor 1!", file=sys.stderr)
+                #print("False Positive on Sensor 1!", file=sys.stderr)
+                logging.debug("False Positive on Sensor 1!")
 		return
 
 	epoch_time = int(time.time())
@@ -322,7 +327,8 @@ def mag_sensor1_callback(channel):
 	outputFunction(str(msg))
 
 	if loops_left == 0:
-            print("Cutting power to 70% ", file=sys.stderr)
+            #print("Cutting power to 70% ", file=sys.stderr)
+            logging.info("Cutting power to 70% ")
 	
 	
 
@@ -333,7 +339,8 @@ def mag_sensor2_callback(channel):
 	#reduce false positives
 	time.sleep(0.05)
 	if GPIO.input(mag_sensor2) != GPIO.HIGH:
-                print("False Positive on Sensor 2!", file=sys.stderr)
+                #print("False Positive on Sensor 2!", file=sys.stderr)
+                logging.debug("False Positive on Sensor 2!")
 		return
 
 	epoch_time = int(time.time())
@@ -350,9 +357,10 @@ def mag_sensor3_callback(channel):
         global mag_sensor3_ts
         
 	#reduce false positives
-	time.sleep(0.1)
+	time.sleep(0.05)
 	if GPIO.input(mag_sensor3) != GPIO.LOW:
                 #print("False Positive on Sensor 3!", file=sys.stderr)
+                logging.debug("False Positive on Sensor 3!")
 		return
 
 	epoch_time = int(time.time())
@@ -370,9 +378,10 @@ def mag_sensor4_callback(channel):
 	global mag_sensor4_ts
 	
 	#reduce false positives
-	time.sleep(0.1)
+	time.sleep(0.05)
 	if GPIO.input(mag_sensor4) != GPIO.LOW:
                 #print("False Positive on Sensor 4!", file=sys.stderr)
+                logging.debug("False Positive on Sensor 4!")
 		return
 
 	epoch_time = int(time.time())
@@ -396,7 +405,8 @@ def mag_sensor5_callback(channel):
 	#reduce false positives
 	time.sleep(0.05)
 	if GPIO.input(mag_sensor5) != GPIO.LOW:
-		print("False Positive on Sensor 5!", file=sys.stderr)
+		#print("False Positive on Sensor 5!", file=sys.stderr)
+		logging.debug("False Positive on Sensor 1!")
 		return
 
         #print("Sensor 5!!!!!!", file=sys.stderr)
@@ -425,7 +435,8 @@ def mag_sensor5_callback(channel):
         
         #if current_time > max_time_count  or loop_count >= max_loop_count
         if (current_time > max_time_count) or (loops_left <= 0):
-            print("LOOP OVER...", file=sys.stderr)
+            #print("LOOP OVER...", file=sys.stderr)
+            logging.info("LOOP OVER...")
             end_loop()
 
 	
@@ -448,6 +459,7 @@ def TEMP():
     
     while True:
         print("Speed=%s " % (speed), file=sys.stderr)
+        logging.debug("Speed=%s ", speed)
         if STOP == 1:
                 return
 
@@ -489,8 +501,9 @@ def getTrainSpeed_thread():
             msg = "{'type': 'speed', 'value': " + msg + "}"
             outputFunction(str(msg))    
 
-            print("MS1=%s  MS2=%s TD=%s Speed=%s Mode=%s" % (mag_sensor1_ts, mag_sensor2_ts, timediff, speed, mode), file=sys.stderr)
-            
+            #print("MS1=%s  MS2=%s TD=%s Speed=%s Mode=%s" % (mag_sensor1_ts, mag_sensor2_ts, timediff, speed, mode), file=sys.stderr)
+            logging.debug("MS1=%s  MS2=%s TD=%s Speed=%s Mode=%s", mag_sensor1_ts, mag_sensor2_ts, timediff, speed, mode)
+
             time.sleep(30)
     
 def getCPUtemperature_thread():
@@ -505,13 +518,15 @@ def getCPUtemperature_thread():
 		#print "Temp=%s %s " % (temp, fahrenheit)
 		msg = "\'%s %s\'" % (temp, fahrenheit)
 		print("Temp=%s %s " % (temp, fahrenheit), file=sys.stderr)
+		logging.debug("Temp=%s %s ", temp, fahrenheit)
 
                 
                 msg = "{'type': 'temp', 'value': " + msg + "}"
                 outputFunction(str(msg))
 	
 		if temp > 55:
-			print("R-Pi too hot, exiting", file=sys.stderr)
+			#print("R-Pi too hot, exiting", file=sys.stderr)
+			logging.error("R-Pi too hot, exiting")
 			sys.exit()
 		time.sleep(60)
 	
@@ -524,7 +539,8 @@ def join_all_threads():
 		#print("Thread name = %s" % thread_name, file=sys.stderr)
 		if thread_name.startswith('Dummy'):
                         continue
-		print("Joining %s" % (t.getName()), file=sys.stderr)
+		#print("Joining %s" % (t.getName()), file=sys.stderr)
+		logging.debug("Joining %s", t.getName())
 		t.join(1.0)
 
 def strip_non_printable(text):
@@ -536,49 +552,55 @@ def strip_non_printable(text):
 # state: 0 = off, 1 = on
 def section_control(section, state):
         retval = -1
-        if section == 1: #Relay5
+        if section == 1: #Relay5 - wall near bathroom
             if state == "OFF":
                 #turn off
-                print("Section1 OFF", file=sys.stderr)
+                #print("Section1 OFF", file=sys.stderr)
+                logging.info("Section1 OFF")
                 request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY5_OFF
                 page = requests.get(request_base)
                 print(request_base, file=sys.stderr)
                 retval = 0
             if state == "ON":
                 #turn on
-                print("Section1 ON", file=sys.stderr)
+                #print("Section1 ON", file=sys.stderr)
+                logging.info("Section1 ON")
                 request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY5_ON
                 page = requests.get(request_base)
                 print(request_base, file=sys.stderr)
                 retval = 0
 
-        if section == 2: #Relay6
+        if section == 2: #Relay6 - near closet
             if state == "OFF":
                 #turn off
-                print("Section2 OFF", file=sys.stderr)
+                #print("Section2 OFF", file=sys.stderr)
+                logging.info("Section2 OFF")
                 request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY6_OFF
                 page = requests.get(request_base)
                 print(request_base, file=sys.stderr)
                 retval = 0
             if state == "ON":
                 #turn on
-                print("Section2 ON", file=sys.stderr)
+                #print("Section2 ON", file=sys.stderr)
+                logging.info("Section2 ON")
                 request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY6_ON
                 page = requests.get(request_base)
                 print(request_base, file=sys.stderr)
                 retval = 0
 
-        if section == 3: #Relay7
+        if section == 3: #Relay7 - near HVAC
             if state == "OFF":
                 #turn off 
-                print("Section3 OFF", file=sys.stderr)
+                #print("Section3 OFF", file=sys.stderr)
+                logging.info("Section3 OFF")
                 request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY7_OFF
                 page = requests.get(request_base)
                 print(request_base, file=sys.stderr)
                 retval = 0
             if state == "ON":
                 #turn on
-                print("Section3 ON", file=sys.stderr)
+                #print("Section3 ON", file=sys.stderr)
+                logging.info("Section3 ON")
                 request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY7_ON
                 page = requests.get(request_base)
                 print(request_base, file=sys.stderr)
@@ -661,7 +683,8 @@ def operating_mode():
     global max_time_count
     global loops_left
     if mode == 1:
-            print("Just doing the loop.", file=sys.stderr)
+            #print("Just doing the loop.", file=sys.stderr)
+            logging.info("Just doing the loop.")
             max_loop_count = returnRandom()
             loops_left = max_loop_count
             msg = "\'%s\'" % (max_loop_count)
@@ -670,34 +693,55 @@ def operating_mode():
             time_count = int(time.time())
             max_time_count = (max_loop_count * 60) + time_count #1 minute per loop in seconds
             
-            print("Looping %s times." % (max_loop_count), file=sys.stderr)
+            #print("Looping %s times." % (max_loop_count), file=sys.stderr)
+            logging.info("Looping %s times.", max_loop_count)
             state_file.write(str(mode))
+
+            gertbot_wrapper("stop")
+            
             # Turn off straight shuttle tracks (Relay6)
             section_control(2,"OFF")
             # Turn on loop tracks (Relay5 and Relay7)
             section_control(1,"ON")
             section_control(3,"ON")
             
-            
-            gertbot_wrapper("stop")
-            
             time.sleep(2)
         
             gertbot_wrapper("start_b")
     elif mode == 2:
-            print("Just doing the straight shuttle", file=sys.stderr)
+            #print("Just doing the straight shuttle", file=sys.stderr)
+            logging.info("Just doing the straight shuttle")
             # Turn off loop tracks (Relay5 and Relay7)
+            section_control(1,"OFF")
+            section_control(3,"OFF")
+
+            section_control(2,"OFF") #temporary
+
+            max_loop_count = returnRandom()
+            loops_left = max_loop_count
+            msg = "\'%s\'" % (max_loop_count)
+            msg = "{'type': 'loops_left', 'value': " + msg + "}"
+            outputFunction(str(msg))
+            time_count = int(time.time())
+            max_time_count = (max_loop_count * 60) + time_count #1 minute per loop in seconds
+            
+            #print("Looping %s times." % (max_loop_count), file=sys.stderr)
+            logging.info("Looping %s times.", max_loop_count)
+            state_file.write(str(mode))
+
             # Turn on shuttle tracks (Relay6)
     elif mode == 3:
-            print("Alternating loop and straight shuttle modes", file=sys.stderr)
-
+            #print("Alternating loop and straight shuttle modes", file=sys.stderr)
+            logging.info("Alternating loop and straight shuttle modes")
+            
     return 0
 
 
 #end_loop is run when loops_left < 0
 def end_loop():
     if mode == 1:
-        print("Restarting mode 1", file=sys.stderr)
+        #print("Restarting mode 1", file=sys.stderr)
+        logging.debug("Restaring mode 1")
         #stop section 1
         section_control(1,"OFF")
 
@@ -708,7 +752,8 @@ def end_loop():
         operating_mode()
 
     elif mode == 2:
-        print("Restaring mode 2", file=sys.stderr)
+        #print("Restaring mode 2", file=sys.stderr)
+        logging.debug("Restaring mode 2")
         #determine direction
         #if direction = A, wait until direction switches to B
         #stop sections 2 and 3
@@ -716,7 +761,8 @@ def end_loop():
         #call operating_mode() to restart
 
     elif mode == 3:
-        print("Restaring mode 3", file=sys.stderr)
+        #print("Restaring mode 3", file=sys.stderr)
+        logging.debug("Restaring mode 3")
         #alernating between modes 1 and 2
         
     return 0
@@ -725,7 +771,8 @@ def end_loop():
 def update_function():
     global current_wemo_state
 
-    print("Getting relay status.", file=sys.stderr)
+    #print("Getting relay status.", file=sys.stderr)
+    logging.info("Getting relay status.")
     current_relay_status = update_relay_status()
     msg = str(current_relay_status)
     msg = "{'type': 'relay_status', 'value': [" + msg + "]}"
@@ -733,22 +780,28 @@ def update_function():
 
     #get wemo status
     state = switch.get_state()
-    print("WeMo state is ", state, file=sys.stderr)
-    print("Current state is ", current_wemo_state, file=sys.stderr)
+    #print("WeMo state is ", state, file=sys.stderr)
+    #print("Current state is ", current_wemo_state, file=sys.stderr)
+    logging.info("WeMo state is %s", state)
+    logging.info("Current state is %s", current_wemo_state)
     #print("Looping..", file=sys.stderr)
     if state != current_wemo_state:  #power state changed
-        print("WeMo power state changed! ", file=sys.stderr)
+        #print("WeMo power state changed! ", file=sys.stderr)
+        logging.info("WeMo power state changed!")
         if (str(state) == '8') and (str(current_wemo_state) == '1'):
             # don't do anything
             #break
-            print("JUNK...", file=sys.stderr)
+            #print("JUNK...", file=sys.stderr)
+            logging.debug("JUNK...")
         elif (str(state) == '1') and (str(current_wemo_state) == '8'):
             # don't do anything
             #break
-            print("JUNK1...", file=sys.stderr)
+            #print("JUNK1...", file=sys.stderr)
+            logging.debug("JUNK1...")
         elif str(state) in ['1', '8']:
             #if state in [1, 8]: #1 and 8 both signify power is ON
-            print("Ramping up power...", file=sys.stderr)
+            #print("Ramping up power...", file=sys.stderr)
+            logging.info("Ramping up power...")
             #what mode
             operating_mode()
         elif str(state) == '0': #power is now off
@@ -785,7 +838,8 @@ def start_status_update():
     
     
 def stop_circle_train():
-	print("Stopping circle train.", file=sys.stderr)
+	#print("Stopping circle train.", file=sys.stderr)
+	logging.info("Stopping circle train.")
 	#reset loop count
 	#max_loop_count = returnRandom()
 	
@@ -802,16 +856,23 @@ def start_webserver():
 
 
 def gertbot_wrapper(mycommand):
-    print("GertbotCommand = %s\n" % (mycommand))
+    #print("GertbotCommand = %s\n" % (mycommand))
+    logging.debug("GertbotCommand = %s", (mycommand))
     command_json = json.dumps({"command" : str(mycommand)}, sort_keys=True)
+
+    #make connection to rabbitmq
 
     try:
         response = gertbot_rpc.call(command_json)
     except:
-        print("Gertbot_rpc.call failed for (%s)\n" % (mycommand), file=sys.stderr)
+        #print("Gertbot_rpc.call failed for (%s)\n" % (mycommand), file=sys.stderr)
+        logging.error("Gertbot_rpc.call failed for (%s)", (mycommand))
         return -1
     
-    print("Response of %s = %s" % (mycommand, response), file=sys.stderr)
+    #print("Response of %s = %s" % (mycommand, response), file=sys.stderr)
+    logging.debug("Response of %s = %s", mycommand, response)
+
+    #close connection to rabbitmq
     
     return 0
 
@@ -837,13 +898,17 @@ class GertbotRpcClient(object):
     def call(self, n):
         self.response = None
         self.corr_id = str(uuid.uuid4())
-        self.channel.basic_publish(exchange='',
-                                   routing_key='gertbot_queue',
-                                   properties=pika.BasicProperties(
-                                         reply_to = self.callback_queue,
-                                         correlation_id = self.corr_id,
-                                         ),
-                                   body=str(n))
+        try:
+            self.channel.basic_publish(exchange='',
+                                       routing_key='gertbot_queue',
+                                       properties=pika.BasicProperties(
+                                             reply_to = self.callback_queue,
+                                             correlation_id = self.corr_id,
+                                             ),
+                                       body=str(n))
+        except:
+                logging.debug('Reconnecting to rabbitmq/gertbot queue.')
+                
         while self.response is None:
             self.connection.process_data_events()
         return str(self.response)
@@ -854,18 +919,60 @@ def check_rabbitmq():
             try:
                 f = open(rabbitmq_pid_file, 'r')    
             except:
-                print("Cannot open pid file for RabbitMQ (%s), exiting." % (rabbitmq_pid_file), file=sys.stderr)
-                exit()
+                #print("Cannot open pid file for RabbitMQ (%s), exiting." % (rabbitmq_pid_file), file=sys.stderr)
+                logging.error("Cannot open pid file for RabbitMQ (%s), exiting.", (rabbitmq_pid_file))
+                sys.exit()
             else:
                 rabbitmq_pid = f.read()
                 f.close()
                 #output("PID=%s" % (rabbitmq_pid))
                 if not psutil.pid_exists(int(rabbitmq_pid)):
                     print("RabbitMQ-server doesn't seem to be running, exiting.", file=sys.stderr)
-                    exit()
+                    sys.exit()
     else:
         print("PID file does not exist (%s), exiting." % (rabbitmq_pid_file), file=sys.stderr)
-        exit()    
+        sys.exit()    
+
+def rabbitmq_keepalive_thread():
+    # keeps the connection to rabbitmq alive - disable timeout
+    # just requests a status update every 5 minutes
+    # this works for now but isn't the best solution
+    while True:
+	if STOP == 1:
+	    return
+        try:
+            response = gertbot_wrapper("status")
+        except:
+            logging.error("Gerbot status update failed in keepalive!")
+
+        time.sleep(300)
+        
+    return 0
+
+
+def signal_term_handler(signal, frame):
+    logging.error("GOT SIGTERM!!!")
+    #print("SIGNAL Got %s" % str(signal), file=sys.stderr) 	
+    cleanup()
+    
+
+def cleanup(): 	
+    STOP = 1
+    
+    join_all_threads()
+
+    #make sure that train is stopped
+    gertbot_wrapper("stop")
+    #turn off relays
+    section_control(1,"OFF")
+    section_control(2,"OFF")
+    section_control(3,"OFF")
+    
+    print("Loop count=%s" % (loop_count), file=sys.stderr)
+
+    GPIO.cleanup()
+    
+    sys.exit(0)
 
 ##### MAIN SECTION #####################
 if __name__ == "__main__":
@@ -878,7 +985,8 @@ if __name__ == "__main__":
         parser.read(config_file)
     except:
         print("Cannot open configuration file: (%s); exiting." % (config_file), file=sys.stderr)
-
+        sys.exit()
+        
     wemo_ip = parser.get('train_server', 'wemo_ip')
     wemo_mac = parser.get('train_server', 'wemo_mac')
     relay_server = parser.get('train_server', 'relay_server')
@@ -886,11 +994,20 @@ if __name__ == "__main__":
     log_filename = parser.get('train_server', 'log_filename')
     state_filename = parser.get('train_server', 'state_filename')
     rabbitmq_pid_file = parser.get('train_server', 'rabbitmq_pid_file')
+    log_level = parser.get('train_server', 'log_level')
     
+
+    #print("LOGLEVEL=",log_level, file=sys.stderr)
+
+    #translate string log level to a numeric log level
+    numeric_level = getattr(logging, log_level.upper(), 10)
+
+    #print("NUMERIC_LEVEL=",numeric_level, file=sys.stderr)
 
     #open log file
     try:
-        logging.basicConfig(filename=log_filename, level=logging.DEBUG)
+        #logging.basicConfig(filename=log_filename, level=logging.DEBUG)
+        logging.basicConfig(filename=log_filename, level=numeric_level)
     except IOError:
            print("Could not open log file:", log_filename, file=sys.stderr)
            print("Exiting.", file=sys.stderr)
@@ -904,18 +1021,18 @@ if __name__ == "__main__":
             last_state = state_file.readline()
             state_file.close()
     except IOError:
-            print("Could not open state file for reading, Setting mode to 1:", state_filename, file=sys.stderr)
+            #print("Could not open state file for reading, Setting mode to 1:", state_filename, file=sys.stderr)
             logging.error("Could not open state file for reading. Setting mode to 1")
             last_state = 1
             
     #open state file for writing
     try:
-            state_file = open(state_filename, "w")
+            state_file = open(state_filename, "w", 0)
             current_state = mode
             logging.debug("Current_State: %s", current_state)
             state_file.write(str(current_state))
     except IOError:
-            print("Could not open state file for writing, Exiting:", state_filename, file=sys.stderr)
+            #print("Could not open state file for writing, Exiting:", state_filename, file=sys.stderr)
             logging.error("Could not open state file for writing. Exiting.")
             sys.exit()
 
@@ -931,18 +1048,23 @@ if __name__ == "__main__":
     r = pyping.ping(wemo_ip)
     #print(r.ret_code, file=sys.stderr)
     if r.ret_code == 0:
-        print("Wemo is reachable.", file=sys.stderr)
+        #print("Wemo is reachable.", file=sys.stderr)
+        logging.info("Wemo is reachable.")
     else:
-        print("Wemo is NOT reachable, exiting.", file=sys.stderr)
+        #print("Wemo is NOT reachable, exiting.", file=sys.stderr)
+        logging.error("Wemo is NOT reachable, exiting.")
         sys.exit()
 
-    print("Relay Server IP address is ", relay_server, file=sys.stderr)
+    #print("Relay Server IP address is ", relay_server, file=sys.stderr)
+    logging.info("Relay Server IP address is %s", relay_server)
     r = pyping.ping(relay_server)
     #print(r.ret_code, file=sys.stderr)
     if r.ret_code == 0:
-        print("Relay Server is reachable.", file=sys.stderr)
+        #print("Relay Server is reachable.", file=sys.stderr)
+        logging.info("Relay Server is reachable.")
     else:
-        print("Relay Server is NOT reachable, exiting.", file=sys.stderr)
+        #print("Relay Server is NOT reachable, exiting.", file=sys.stderr)
+        logging.error("Relay Server is NOT reachable, exiting.")
         sys.exit()
     
 
@@ -987,8 +1109,7 @@ if __name__ == "__main__":
     section_control(3, "OFF")
     
     update_relay_status()
-
-    
+  
     # Need to start the webserver in it's own thread
     webserver_thread = Thread(target = start_webserver)
     webserver_thread.setDaemon(True)
@@ -1002,7 +1123,8 @@ if __name__ == "__main__":
     switch = env.get_switch('Train')
     #switch = env.get_switch('WeMo Insight Lamp')
     state = switch.get_state()
-    print("WeMo state is ", state, file=sys.stderr)
+    #print("WeMo state is ", state, file=sys.stderr)
+    logging.info("WeMo state is %s", state)
     current_wemo_state = state
 
     CPUTemp_thread = Thread(target = getCPUtemperature_thread)
@@ -1027,32 +1149,33 @@ if __name__ == "__main__":
     #verify that rabbitmq is running before we go further
     check_rabbitmq()
     gertbot_rpc = GertbotRpcClient()
-    print(" [x] Requesting GertBot(status)")
+    #print(" [x] Requesting GertBot(status)")
+    logging.info("[x] Requesting GertBot(status)")
     #command = start_a start_b stop status config version read_error emergency_stop
     command_json = json.dumps({"command" : 'status'}, sort_keys=True)
 
-    print("CommandJSON= %s" % (command_json), file=sys.stderr)
+    #print("CommandJSON= %s" % (command_json), file=sys.stderr)
+    logging.info("CommandJSON= %s", (command_json))
     response = gertbot_rpc.call(command_json)
     print(" [.] Got %s" % (response), file=sys.stderr)
+    logging.info("[.] Got %s", (response))
 
-    #sys.exit()
+    rabbitmq_thread = Thread(target = rabbitmq_keepalive_thread)
+    rabbitmq_thread.setDaemon(True)
+    rabbitmq_thread.start()
+
+    # Handle signal interrupts
+    signal.signal(signal.SIGTERM, signal_term_handler)
+    signal.signal(signal.SIGABRT, signal_term_handler)
+    signal.signal(signal.SIGHUP, signal_term_handler)
+    
+    
+    
     while True:
             try:
                     time.sleep(0.5)
                     
             except KeyboardInterrupt:
-                    GPIO.cleanup()	
-                    STOP = 1
-                    
-                    join_all_threads()
-
-                    #make sure that train is stopped
-                    gertbot_wrapper("stop")
-                    #turn off relays
-                    section_control(1,"OFF")
-                    section_control(2,"OFF")
-                    section_control(3,"OFF")
-                    
-                    print("Loop count=%s" % (loop_count), file=sys.stderr)
-        
-                    sys.exit()
+                    #catches CTRL-C
+                    cleanup()
+           
