@@ -59,8 +59,12 @@ total_loop_count = 0
 loop_time = 0
 loops_left = 0
 
+loop_timer_thread = None
+shuttle_timer_thread = None
+
 last_state = 0
 current_state = 0
+
 current_wemo_state = 0
 
 STOP = 0
@@ -154,6 +158,18 @@ def index():
 @app.route('/')
 def jq2():
         return render_template('jq2.html')
+
+@app.route("/mode/<data>", methods=['POST'])
+def update_mode(data):
+
+    return "OK"
+
+
+@app.route('/restart')
+def restart():
+        logging.info("Restarting Train-Server.")
+        res = os.popen('systemctl restart train-server > /dev/null 2>&1').readline()
+        return "OK"
 
 #@app.route("/lights/<data>", methods=['POST'])
 @app.route("/lights/<data>", methods=['POST'])
@@ -547,6 +563,16 @@ def strip_non_printable(text):
 	return ''.join(i for i in text if ord(i)<128)	
 
 
+# all_relays_off turns off all of the relays
+# used when first starting and when stopping the server
+def all_relays_off():
+    logging.info("Turning All Relays OFF")
+    request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY_ALL_OFF
+    page = requests.get(request_base)
+    print(request_base, file=sys.stderr)
+    retval = 0
+    
+
 # section_control turns track sections on or off
 # section: what section to turn on/off
 # state: 0 = off, 1 = on
@@ -675,6 +701,31 @@ def update_relay_status():
 	return relay_status
 
 
+# health_check monitors the status of necessary functions and resets as necessary.
+# This is run as a thread in a constant loop
+def health_check():
+    while True:
+        check_wemo()
+        check_relay_server()
+
+        time.sleep(60)
+        
+    return 0
+
+
+# loop_timer is a failsafe/backup mode for counting down train loops.
+# the primary method of counting are the magenetic sensors.
+# If loop_timer activates, it will set the loop_count to zero and call end_loop()
+def loop_timer(loops):
+    print("\nStarting loop_timer.... %s" % str(loops))
+    time.sleep(loops)
+
+    # if the loop_counter is working then this isn't needed.
+    if (loops_left <= 0):
+        print("\nEnding loop_timer...")
+        end_loop()
+    
+    return 0
 
 
 def operating_mode():
@@ -682,6 +733,12 @@ def operating_mode():
     global max_loop_count
     global max_time_count
     global loops_left
+    global loop_timer_thread
+    global shuttle_timer_thread
+    
+    #mode = 1
+    print("OPERATING MODE = %s" % str(mode))
+    
     if mode == 1:
             #print("Just doing the loop.", file=sys.stderr)
             logging.info("Just doing the loop.")
@@ -708,9 +765,15 @@ def operating_mode():
             time.sleep(2)
         
             gertbot_wrapper("start_b")
+
+            #start a loop_timer_thread
+            loop_timer_thread = threading.Thread(target=loop_timer, args=((max_loop_count * 60),))
+            loop_timer_thread.start()
     elif mode == 2:
             #print("Just doing the straight shuttle", file=sys.stderr)
             logging.info("Just doing the straight shuttle")
+            
+            """
             # Turn off loop tracks (Relay5 and Relay7)
             section_control(1,"OFF")
             section_control(3,"OFF")
@@ -728,7 +791,8 @@ def operating_mode():
             #print("Looping %s times." % (max_loop_count), file=sys.stderr)
             logging.info("Looping %s times.", max_loop_count)
             state_file.write(str(mode))
-
+            """
+            
             # Turn on shuttle tracks (Relay6)
     elif mode == 3:
             #print("Alternating loop and straight shuttle modes", file=sys.stderr)
@@ -742,10 +806,17 @@ def end_loop():
     if mode == 1:
         #print("Restarting mode 1", file=sys.stderr)
         logging.debug("Restaring mode 1")
+
+        #remove loop_timer_thread
+        try:
+            loop_timer_thread.join()
+        except:
+            logging.debug("JOIN on loop_timer_thread failed.")
+            
         #stop section 1
         section_control(1,"OFF")
 
-        #wait 60 seconds
+        #wait 60 seconds - this is like a station stop.
         time.sleep(60)
 
         #call operating_mode()  to restart
@@ -861,6 +932,12 @@ def gertbot_wrapper(mycommand):
     command_json = json.dumps({"command" : str(mycommand)}, sort_keys=True)
 
     #make connection to rabbitmq
+    try:
+        gertbot_rpc = GertbotRpcClient()
+    except:
+        logging.error("Cannot make GertbotRpcClient() connection!")
+        return -1
+    
 
     try:
         response = gertbot_rpc.call(command_json)
@@ -873,7 +950,8 @@ def gertbot_wrapper(mycommand):
     logging.debug("Response of %s = %s", mycommand, response)
 
     #close connection to rabbitmq
-    
+    gertbot_rpc.close()
+                      
     return 0
 
 
@@ -894,6 +972,9 @@ class GertbotRpcClient(object):
     def on_response(self, ch, method, props, body):
         if self.corr_id == props.correlation_id:
             self.response = str(body.decode("utf-8","strict"))
+
+    def close(self):
+        self.connection.close()
 
     def call(self, n):
         self.response = None
@@ -956,6 +1037,55 @@ def signal_term_handler(signal, frame):
     cleanup()
     
 
+def check_wemo():
+    res = os.popen('fping -c 1  -g 192.168.1.0/24 > /dev/null 2>&1').readline()
+    #print(res, file=sys.stderr)
+
+    wemo_cmd = "arp -n |grep -i \"" + wemo_mac + "\" |awk \'{print $1}\'"
+    wemo_ip = os.popen(wemo_cmd).readline()
+    #print("Wemo IP address is ", wemo_ip, file=sys.stderr)
+    logging.info("Wemo IP address is %s", wemo_ip)
+    
+    r = pyping.ping(wemo_ip)
+    #print(r.ret_code, file=sys.stderr)
+    if r.ret_code == 0:
+        #print("Wemo is reachable.", file=sys.stderr)
+        logging.info("Wemo is reachable.")
+    else:
+        print("Wemo is NOT reachable, exiting.", file=sys.stderr)
+        logging.error("Wemo is NOT reachable, exiting.")
+        #sys.exit()
+        # to restart from command line
+        #os.execv(sys.argv[0], sys.argv)
+        #or to restart from systemctl
+        restart()
+        
+    return 0
+
+
+def check_relay_server():
+    #print("Relay Server IP address is ", relay_server, file=sys.stderr)
+    logging.info("Relay Server IP address is %s", relay_server)
+    r = pyping.ping(relay_server)
+    #print(r.ret_code, file=sys.stderr)
+    if r.ret_code == 0:
+        #print("Relay Server is reachable.", file=sys.stderr)
+        logging.info("Relay Server is reachable.")
+    else:
+        print("Relay Server is NOT reachable, exiting.", file=sys.stderr)
+        logging.error("Relay Server is NOT reachable, exiting.")
+        #
+        # Need a way to remotely reset the relay server
+        #
+        #sys.exit()
+        # to restart from command line
+        #os.execv(sys.argv[0], sys.argv)
+        #or to restart from systemctl
+        restart()
+        
+    return 0
+
+
 def cleanup(): 	
     STOP = 1
     
@@ -964,9 +1094,7 @@ def cleanup():
     #make sure that train is stopped
     gertbot_wrapper("stop")
     #turn off relays
-    section_control(1,"OFF")
-    section_control(2,"OFF")
-    section_control(3,"OFF")
+    all_relays_off()
     
     print("Loop count=%s" % (loop_count), file=sys.stderr)
 
@@ -1037,35 +1165,13 @@ if __name__ == "__main__":
             sys.exit()
 
     #check connectivity to wemo and relay_server
-    print("Checking connectivity to wemo and relay_server", file=sys.stderr)      
-    res = os.popen('fping -c 1  -g 192.168.1.0/24 > /dev/null 2>&1').readline()
-    #print(res, file=sys.stderr)
+    #print("Checking connectivity to wemo and relay_server", file=sys.stderr)
+    logging.info("Checking connectivity to wemo and relay_server")
 
-    wemo_cmd = "arp -n |grep -i \"" + wemo_mac + "\" |awk \'{print $1}\'"
-    wemo_ip = os.popen(wemo_cmd).readline()
-    print("Wemo IP address is ", wemo_ip, file=sys.stderr)
+    check_wemo()
+
+    check_relay_server()
     
-    r = pyping.ping(wemo_ip)
-    #print(r.ret_code, file=sys.stderr)
-    if r.ret_code == 0:
-        #print("Wemo is reachable.", file=sys.stderr)
-        logging.info("Wemo is reachable.")
-    else:
-        #print("Wemo is NOT reachable, exiting.", file=sys.stderr)
-        logging.error("Wemo is NOT reachable, exiting.")
-        sys.exit()
-
-    #print("Relay Server IP address is ", relay_server, file=sys.stderr)
-    logging.info("Relay Server IP address is %s", relay_server)
-    r = pyping.ping(relay_server)
-    #print(r.ret_code, file=sys.stderr)
-    if r.ret_code == 0:
-        #print("Relay Server is reachable.", file=sys.stderr)
-        logging.info("Relay Server is reachable.")
-    else:
-        #print("Relay Server is NOT reachable, exiting.", file=sys.stderr)
-        logging.error("Relay Server is NOT reachable, exiting.")
-        sys.exit()
     
 
     
@@ -1104,9 +1210,7 @@ if __name__ == "__main__":
 
 
     #initialize track sections by turning relays off
-    section_control(1, "OFF")
-    section_control(2, "OFF")
-    section_control(3, "OFF")
+    all_relays_off()
     
     update_relay_status()
   
@@ -1140,6 +1244,10 @@ if __name__ == "__main__":
     update_status_thread.setDaemon(True)
     update_status_thread.start()
 
+    # Start thread to check health
+    health_check_thread = Thread(target = health_check)
+    health_check_thread.setDaemon(True)
+    health_check_thread.start()
     
     # Reset to known state!
     # Need to save to a file
@@ -1148,21 +1256,28 @@ if __name__ == "__main__":
 
     #verify that rabbitmq is running before we go further
     check_rabbitmq()
+
+    """   
     gertbot_rpc = GertbotRpcClient()
     #print(" [x] Requesting GertBot(status)")
     logging.info("[x] Requesting GertBot(status)")
     #command = start_a start_b stop status config version read_error emergency_stop
     command_json = json.dumps({"command" : 'status'}, sort_keys=True)
+    """
 
+    """
     #print("CommandJSON= %s" % (command_json), file=sys.stderr)
     logging.info("CommandJSON= %s", (command_json))
     response = gertbot_rpc.call(command_json)
     print(" [.] Got %s" % (response), file=sys.stderr)
     logging.info("[.] Got %s", (response))
+    """
 
+    """
     rabbitmq_thread = Thread(target = rabbitmq_keepalive_thread)
     rabbitmq_thread.setDaemon(True)
     rabbitmq_thread.start()
+    """
 
     # Handle signal interrupts
     signal.signal(signal.SIGTERM, signal_term_handler)
