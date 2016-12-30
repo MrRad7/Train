@@ -41,6 +41,15 @@
 	</script>
 
 	
+<script>
+        $(document).ready(function(){
+		$("#modeselect").change(function(){
+						$("#myTextarea").append("MODE CHANGED!!!\n");
+                });
+        });
+	</script>
+	
+	
 	<script>
         $(document).ready(function(){
 		$("#lights-onoffswitch").change(function(){
@@ -340,7 +349,7 @@
                         </div>
                 </td>
                 <td>   Mode<br>
-                        <select>
+                        <select id="modeselect">
                         <option value="1">Loop</option>
                         <option value="2">Shuttle/Trolley</option>
                         <option value="3">Random</option>
