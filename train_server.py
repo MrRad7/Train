@@ -36,73 +36,12 @@ import pika
 import uuid
 import psutil
 from ConfigParser import SafeConfigParser
+from global_variables import *
+#import global_variables
+from relay_functions import *
 
 #requires fping
 
-
-config_file = 'train_server.config'
-
-# Set initial/default values
-mycommand = ''
-
-# mode 1 = just do the train circle
-# mode 2 = just do the train straight shuttle
-# mode 3 = alternate modes 1 and 2
-mode = 1 #default value
-
-relay_status = {'Relay-01': 'OFF', 'Relay-02': 'OFF', 'Relay-03': 'OFF', 'Relay-04': 'OFF'}
-loop_count = 0
-#time_count = 0
-max_loop_count = 0
-max_time_count = 0
-total_loop_count = 0
-loop_time = 0
-loops_left = 0
-
-loop_timer_thread = None
-shuttle_timer_thread = None
-
-last_state = 0
-current_state = 0
-
-current_wemo_state = 0
-
-STOP = 0
-
-#mag sensor timestamps used for speed and safety calculations
-mag_sensor1_ts = 0
-mag_sensor2_ts = 0
-mag_sensor3_ts = 0
-mag_sensor4_ts = 0
-mag_sensor5_ts = 0
-
-#codes for the relay server
-RELAY1_OFF = "00"  #station lights OFF
-RELAY1_ON = "01"   #station lights ON
-
-RELAY2_OFF = "02"
-RELAY2_ON = "03"
-
-RELAY3_OFF = "04"
-RELAY3_ON = "05"
-
-RELAY4_OFF = "06"
-RELAY4_ON = "07"  
-
-RELAY5_OFF = "08" # Section 1 power OFF (station)
-RELAY5_ON = "09"  # Section 1 power ON (station)
-
-RELAY6_OFF = "10" # Section 2 power OFF (tram station)
-RELAY6_ON = "11"  # Section 2 power ON (tram station)
-
-RELAY7_OFF = "12" # Section 3 power ON (safety stop)
-RELAY7_ON = "13"  # Section 3 power ON (safety stop)
-
-RELAY8_OFF = "14"
-RELAY8_ON = "15"
-
-RELAY_ALL_OFF = "44"
-RELAY_ALL_ON = "45"
 
 
 # SSE "protocol" is described here: http://mzl.la/UPFyxY
@@ -174,29 +113,18 @@ def restart():
 #@app.route("/lights/<data>", methods=['POST'])
 @app.route("/lights/<data>", methods=['POST'])
 def lights(data):
-        #outputFunction("IN LIGHTS")
-        #print("LIGHTS", file=sys.stderr)
-        #if request.method == 'POST':
-        #    data = request.form
-        #    outputFunction("DATA")
         if data == "ON":
             print("Lights ON", file=sys.stderr)
             logging.info("Lights ON")
-            request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY1_ON
-            # 00 to turn lights off
-            page = requests.get(request_base)
-            print(request_base, file=sys.stderr)
-            #print page.text
+            lights_function("ON")
         elif data == "OFF":
             print("Lights OFF", file=sys.stderr)
             logging.info("Lights OFF")
-            request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY1_OFF
-            #request_code = request_base + "01" #turn on relay 1
-            page = requests.get(request_base)
-            print(request_base, file=sys.stderr)
-            #print page.text
+            lights_function("OFF")
         else:
             print("ERROR", file=sys.stderr)
+            logging.error("ERROR")
+            return "ERROR"
                 
         return "OK"
 
@@ -422,7 +350,7 @@ def mag_sensor5_callback(channel):
 	time.sleep(0.05)
 	if GPIO.input(mag_sensor5) != GPIO.LOW:
 		#print("False Positive on Sensor 5!", file=sys.stderr)
-		logging.debug("False Positive on Sensor 1!")
+		logging.debug("False Positive on Sensor 5!")
 		return
 
         #print("Sensor 5!!!!!!", file=sys.stderr)
@@ -484,11 +412,14 @@ def TEMP():
             speed = timediff / 20
             msg = "\'%s\'" % (speed)
 
-        
-        msg = "{'type': 'speed', 'value': " + msg + "}"
-        outputFunction(str(msg))
-        #MS1=1457210058  MS2=1457210085 Speed=0 Mode=1
+        if speed != 0
+            msg = "{'type': 'speed', 'value': " + msg + "}"
+            outputFunction(str(msg))
+            #MS1=1457210058  MS2=1457210085 Speed=0 Mode=1
 
+        #reset speed to 0 after displaying
+        speed = 0
+        
         time.sleep(60)
     
 def getTrainSpeed_thread():
@@ -563,14 +494,7 @@ def strip_non_printable(text):
 	return ''.join(i for i in text if ord(i)<128)	
 
 
-# all_relays_off turns off all of the relays
-# used when first starting and when stopping the server
-def all_relays_off():
-    logging.info("Turning All Relays OFF")
-    request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY_ALL_OFF
-    page = requests.get(request_base)
-    print(request_base, file=sys.stderr)
-    retval = 0
+
     
 
 # section_control turns track sections on or off
@@ -581,124 +505,31 @@ def section_control(section, state):
         if section == 1: #Relay5 - wall near bathroom
             if state == "OFF":
                 #turn off
-                #print("Section1 OFF", file=sys.stderr)
-                logging.info("Section1 OFF")
-                request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY5_OFF
-                page = requests.get(request_base)
-                print(request_base, file=sys.stderr)
-                retval = 0
+                retval = section_1("OFF")
             if state == "ON":
-                #turn on
-                #print("Section1 ON", file=sys.stderr)
-                logging.info("Section1 ON")
-                request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY5_ON
-                page = requests.get(request_base)
-                print(request_base, file=sys.stderr)
-                retval = 0
+                retval = section_1("ON")
+                
 
         if section == 2: #Relay6 - near closet
             if state == "OFF":
                 #turn off
-                #print("Section2 OFF", file=sys.stderr)
-                logging.info("Section2 OFF")
-                request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY6_OFF
-                page = requests.get(request_base)
-                print(request_base, file=sys.stderr)
-                retval = 0
+                retval = section_2("OFF")
             if state == "ON":
                 #turn on
-                #print("Section2 ON", file=sys.stderr)
-                logging.info("Section2 ON")
-                request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY6_ON
-                page = requests.get(request_base)
-                print(request_base, file=sys.stderr)
-                retval = 0
+                retval = section_2("ON")
 
         if section == 3: #Relay7 - near HVAC
             if state == "OFF":
                 #turn off 
-                #print("Section3 OFF", file=sys.stderr)
-                logging.info("Section3 OFF")
-                request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY7_OFF
-                page = requests.get(request_base)
-                print(request_base, file=sys.stderr)
-                retval = 0
+                retval = section_3("OFF")
             if state == "ON":
                 #turn on
-                #print("Section3 ON", file=sys.stderr)
-                logging.info("Section3 ON")
-                request_base = "http://" + relay_server + "/" + relay_server_port + "/" + RELAY7_ON
-                page = requests.get(request_base)
-                print(request_base, file=sys.stderr)
-                retval = 0
+                retval = section_3("ON")
                 
         return retval
     
 
-def update_relay_status():
-	#global relay_server
-	#global relay_server_port
-	global relay_status
-	good_relay_list = []
 
-	request_base = "http://" + relay_server + "/" + relay_server_port +"/42"
-	#request_code = request_base + "01" #turn on relay 1
-	page = requests.get(request_base)
-	#print page.text
-	tree = html.fromstring(page.text)
-	relays1 = tree.xpath('//p//text()')
-
-	request_base = "http://" + relay_server + "/" + relay_server_port +"/43"
-	page = requests.get(request_base)
-	#print page.text
-	tree = html.fromstring(page.text)
-	relays2 = tree.xpath('//p//text()')
-
-	relays = relays1 + relays2
-	#print "RELAYS: ", relays
-
-
-	for item in relays:
-		item = item.strip() #strip leading and trailing whitespace
-		item = item.replace("&nbsp","")
-		item = strip_non_printable(item)
-		item = re.sub(r"\s", "", item)
-		item = item.replace(':', "")
-		item = item.replace(' ', "")
-		if item == "": #blank line
-			#print "BLANK"
-			continue
-		if item == "Relay-ALLON":
-			continue
-		if item == "ALL-ON":
-			continue
-		if item == "Relay-ALLOFF":
-			continue
-		if item == "ALL-OFF":
-			continue
-		if re.match('^ON/OFF', item):
-			continue
-		if re.match('^ChangeIP', item):
-			continue
-		if item == "Enter":
-			continue
-		if item == "NextPage":
-			continue
-		
-		good_relay_list.append(item)
-		
-
-	i = 0
-	while i < len(good_relay_list):
-		#print good_relay_list[i]
-		#print "Relay=%s State=%s" % (good_relay_list[i], good_relay_list[i+1])
-		relay_status[good_relay_list[i]] = good_relay_list[i+1]
-		i = i + 2
-
-	for key in sorted(relay_status):
-		print(key, relay_status[key], file=sys.stderr)
-
-	return relay_status
 
 
 # health_check monitors the status of necessary functions and resets as necessary.
@@ -1105,7 +936,7 @@ def cleanup():
 ##### MAIN SECTION #####################
 if __name__ == "__main__":
     print("Running train server.", file=sys.stderr)
-
+    
     #parse config file
     parser = SafeConfigParser()
     
@@ -1147,6 +978,8 @@ if __name__ == "__main__":
     try:
             state_file = open(state_filename, "r")
             last_state = state_file.readline()
+            # Read mode, current_mode, current_direction (JSON)
+            
             state_file.close()
     except IOError:
             #print("Could not open state file for reading, Setting mode to 1:", state_filename, file=sys.stderr)
@@ -1167,9 +1000,7 @@ if __name__ == "__main__":
     #check connectivity to wemo and relay_server
     #print("Checking connectivity to wemo and relay_server", file=sys.stderr)
     logging.info("Checking connectivity to wemo and relay_server")
-
     check_wemo()
-
     check_relay_server()
     
     
@@ -1178,6 +1009,7 @@ if __name__ == "__main__":
     GPIO.setmode(GPIO.BCM)
 
     # SENSOR SETUP
+    #mag_sensor1 above Thomas wall decal
     mag_sensor1 = 12 #GPIO pin 12
     GPIO.setup(mag_sensor1, GPIO.IN, pull_up_down=GPIO.PUD_UP)  #active input with pullup
     #print GPIO.input(mag_sensor1)
@@ -1202,6 +1034,7 @@ if __name__ == "__main__":
     #bouncetime set to 5 seconds
     GPIO.add_event_detect(mag_sensor4, GPIO.RISING, callback=mag_sensor4_callback, bouncetime=5000)
 
+    #mag_sensor5 is on back wall closest to the trees
     mag_sensor5 = 26 #GPIO pin 26
     GPIO.setup(mag_sensor5, GPIO.IN, pull_up_down=GPIO.PUD_UP)  #active input with pullup
     #print GPIO.input(mag_sensor5)
