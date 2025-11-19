@@ -1,0 +1,10 @@
+apt-get install python-pip
+pip install virtualenv
+pip install virtualenvwrapper
+virtualenv trainsite/bin/activate
+source ./bin/activate
+
+apt-get install pip
+pip install Flask
+pip install gevent
+
