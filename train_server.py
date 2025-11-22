@@ -45,16 +45,10 @@ from wemo_functions import *
 
 from trainsite_database import TrainDatabaseClass
 
-#import pyping #replace pyping with ping3
-#requires fping
-#from configparser import SafeConfigParser
-#from threading import Thread
 
 stop_event = threading.Event() #used to stop threads
 
-train_state_lock = threading.Lock() #only one command modifying train_state_dict at a time!
 
-relay_lock = threading.Lock() #only one thread working on the relay at a time!
 
 # Constants
 LOOP = 1
@@ -63,9 +57,6 @@ RANDOM = 3
 ON = 1
 OFF = 0
 
-
-
-thread_list = list()
 
 app = Flask(__name__)
 subscriptions = []
@@ -182,7 +173,6 @@ def lights(data):
             logging.info("Lights ON")
             #lights_function("ON")
             relaycontroller_wrapper('1', 'ON')
-            #update_state_object(TrainData, lights=1)
             result = TrainDatabase.update_record("lights", 1)
             print(f"Result from lights update:  {result}")
         elif data == "OFF":
@@ -204,6 +194,39 @@ def lights(data):
 
 
 @app.route("/power/<data>", methods=['POST'])
+def power(data):
+    # read state and initialize relays
+    state = get_wemo_state(wemo_ip)
+    print(f"Wemo State = {state}")
+    logging.debug("Wemo result: " + str(state))
+    
+    if data == "ON":
+        #print("Power ON", file=sys.stderr)
+        logging.info("Power ON")
+        
+        if state != "ON": #not currently on
+            result = change_wemo_state(wemo_ip, 'ON')
+            result = TrainDatabase.update_record("power", 1)
+        else:
+            pass #do nothing, it's already on        
+    elif data == "OFF":
+        print("Power OFF", file=sys.stderr)
+        logging.info("Power OFF")     
+         
+        if state != "OFF": #not currently off
+            #motorcontroller_wrapper("stop")
+            motorcontroller_wrapper("slow_stop")
+            result = change_wemo_state(wemo_ip, 'OFF')
+            result = TrainDatabase.update_record("power", 0)
+        else:
+            pass #do nothing, it's already off
+    else:
+            print("ERROR; incorrect power state given.", file=sys.stderr)
+                
+    return "OK"
+
+
+'''
 def power(data):
     if data == "ON":
         #print("Power ON", file=sys.stderr)
@@ -229,7 +252,7 @@ def power(data):
             print("ERROR", file=sys.stderr)
                 
     return "OK"
-
+'''
 
 
 
@@ -491,7 +514,7 @@ def all_relays_off():
 	relaycontroller_wrapper("all_relays_off")
 	return 0
 	
-
+'''
 def lights_function(value="OFF"):
 	if value == "ON":
 		#print("Turning on lights.")
@@ -501,6 +524,7 @@ def lights_function(value="OFF"):
 		relaycontroller_wrapper('1', 'OFF')
 		
 	return 0
+'''
 
 
 def publish_current_relay_status():
@@ -796,17 +820,7 @@ def getCPUtemperature():
              
  
  
-# This makes sure that all of the needed threads are still running
-# and restarts if needed.
-'''
-def check_threads():
-   #print("in CHECK_THREADS")
-   value = thread_list
-   #msg = "{'type': 'THREAD', 'value': " + str(value) + "}"
-   #msg = "{'type': 'thread', 'value': " + 'MIKE' + "}"
-   #print("VALUE: " + str(value))
-   return 0
- '''
+
  
  
     
@@ -893,7 +907,7 @@ def update_function():
             #what mode?
             #operating_mode()  #start in whatever state it left off in
             result = TrainDatabase.update_record("power", 1)
-        elif str(state) in ['0','OFF']: #chainging to OFF
+        elif str(state) in ['0','OFF']: #changing to OFF
                 print("Turning off power...", file=sys.stderr)
                 motorcontroller_wrapper("stop")
                 #turn off relays
@@ -997,14 +1011,15 @@ def section_control(section, state):
 
 
 
+def train_slow_stop():
+    ''' Slows the train to 50% power and then stops
+    '''
+    motorcontroller_wrapper("slow_stop")
+    return 0
+    
+
 
 def new_loop_count():
-    #global max_loop_count
-    #global max_time_count
-    #global loops_left
-    #global loop_timer_thread
-    #global shuttle_timer_thread
-
     # Get new randomized loop count
     TrainDatabase.max_loop_count = returnRandom(3, 5) #min,max
     TrainDatabase.loops_left = TrainDatabase.max_loop_count
@@ -1024,12 +1039,98 @@ def new_loop_count():
 
 
 
-def loop_thread(event): 
-    previous_mode = TrainDatabase.get_item("previous_mode")
+def start_new_loop():
+    ''' 
+     Starts a new loop
+     gets new_loop_count, turns on the track sections,
+     starts the motor_controller and updates the database
+    '''
+    print("NEW loop.", file=sys.stderr)
+    logging.info("NEW loop.")
+
+    new_loop_count()
     
-    current_mode = TrainDatabase.get_item("mode")
+    
+    motorcontroller_wrapper("stop") #just to be safe
+    #time.sleep(2)
+    
+    # Turn off straight shuttle tracks (Relay6)
+    section_control(2,"OFF") #trolley
+    # Turn on loop tracks (Relay5 and Relay7)
+    section_control(1,"ON") #station
+    section_control(3,"ON") #HVAC/safety
+    time.sleep(2)
+
+    print("Calling motorcontroller_wrapper start_b")
+    motorcontroller_wrapper("start_b")
+    result = TrainDatabase.update_record("direction", "B")
+    
+    previous_mode = LOOP
+    result = TrainDatabase.update_record("previous_mode", LOOP)
+
+    #start a loop_timer_thread
+    #loop_timer_thread = threading.Thread(target=loop_timer, args=((max_loop_count * 60),))
+    #loop_timer_thread.start()
+    
+    return True
+    
+
+
+def loop_thread(event): 
+    logging.debug("Starting loop thread.")
+    #print("Starting loop thread.")
+
+    while not event.is_set():  #if event is set, everything stops
+        logging.debug("In loop thread.")
+        #print("In loop thread.")
+
+        current_mode = TrainDatabase.get_item("mode")
+        logging.debug("CURRENT MODE: " + str(current_mode))
+
+        previous_mode = TrainDatabase.get_item("previous_mode")
+        logging.debug("Previous mode: " + str(previous_mode))
+        #print("Previous mode: " + str(previous_mode))
+
+        #IF POWER ISN'T ON DON'T DO ANYTHING
+        #can't ensure correct state without power
+        power_status = TrainDatabase.get_item("power")
+        if int(power_status) == 1:
+            if (int(current_mode) == LOOP): #enter loop mode
+                #check previous condition
+                if int(previous_mode) == TROLLEY: #switching from mode 2 to mode 1
+                    logging.debug("Parking at the trolley station.")
+                    print("Parking at the trolley station.")
+                    #park_trolley()
+
+
+                if int(previous_mode) == LOOP: #already doing loop mode
+                    logging.debug("Already in loop mode.")
+                    print("Already in loop mode.")   
+                    pass
+                else: #start a new loop
+                    start_new_loop()
+                    
+                    
+        else:
+            print("No power, returning from loop_thread.")
+            logging.debug("No power, returning from loop_thread.")
+            if (int(power_status) == 0) and (int(current_mode) == LOOP) and (previous_mode == LOOP):
+                previous_mode = 0 #this will cause a new loop when power comes back
+                result = TrainDatabase.update_record("previous_mode", OFF)
+            
+        time.sleep(5)
+        
+    print("loop_thread is stopping gracefully.")
+    return 0
+
+
+'''
+def loop_thread(event): 
+    #previous_mode = TrainDatabase.get_item("previous_mode")
+    
+    #current_mode = TrainDatabase.get_item("mode")
     #previous_mode = current_mode   #same thing when starting, no change
-    counter = 0
+    #counter = 0
 
     logging.debug("Starting loop thread.")
     #print("Starting loop thread.")
@@ -1041,6 +1142,7 @@ def loop_thread(event):
         current_mode = TrainDatabase.get_item("mode")
         logging.debug("CURRENT MODE: " + str(current_mode))
 
+        previous_mode = TrainDatabase.get_item("previous_mode")
         logging.debug("Previous mode: " + str(previous_mode))
         #print("Previous mode: " + str(previous_mode))
 
@@ -1066,7 +1168,7 @@ def loop_thread(event):
                     new_loop_count()
                     
                     
-                    motorcontroller_wrapper("stop")
+                    motorcontroller_wrapper("stop") #just to be safe
                     #time.sleep(2)
                     
                     # Turn off straight shuttle tracks (Relay6)
@@ -1095,7 +1197,7 @@ def loop_thread(event):
         
     print("loop_thread is stopping gracefully.")
     return 0
-    
+'''   
     
 
 def park_loop():

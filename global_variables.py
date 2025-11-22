@@ -8,6 +8,7 @@ class SharedData():
     # Set initial/default values
     mycommand = ''
 
+    # mode 0 = off
     # mode 1 = just do the train circle
     # mode 2 = just do the train straight shuttle
     # mode 3 = alternate modes 1 and 2
