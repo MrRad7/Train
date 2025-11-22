@@ -29,7 +29,7 @@ class SharedData():
 
     relay_status = {'Relay-01': 'OFF', 'Relay-02': 'OFF', 'Relay-03': 'OFF', 'Relay-04': 'OFF'}
     loop_count = 0
-    #time_count = 0
+    time_count = 0
     max_loop_count = 0
     max_time_count = 0
     total_loop_count = 0
@@ -44,7 +44,6 @@ class SharedData():
 
     STOP = 0
 
-    #junk = None
 
     #mag sensor timestamps used for speed and safety calculations
     mag_sensor1_ts = 0
@@ -56,10 +55,7 @@ class SharedData():
     # these values get set from a config file in the main routine
     wemo_ip = ''
     wemo_mac = ''
-    #relay_wemo_ip = ''
-    #relay_wemo_mac = ''
-    #relay_server = ''
-    #relay_server_port = ''
+    
     log_filename = ''
     state_filename = ''
     rabbitmq_pid_file = ''
@@ -67,20 +63,3 @@ class SharedData():
 
     previous_mode = 0
 
-    
-    #list_test = ['one','two','three']
-    #test = ''
-
-    '''    
-    train_state_dict = {
-    'power':0,#boolean 0=off
-    'mode':0, #0=none, 1=loop, 2=shuttle, 3=random
-    'direction':'B', #B is default direction for going around the loop
-    'loops_left':0,
-    'last_location':1, #last sensor to see the train 1-5
-    'lights':0, #boolean 0=off
-    'section1':0, #boolean 0=off
-    'section2':0, #boolean 0=off
-    'section3':0 #boolean 0=off
-    }    
-    ''' 
