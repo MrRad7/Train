@@ -53,7 +53,7 @@ stop_event = threading.Event() #used to stop threads
 # Constants
 LOOP = 1
 TROLLEY = 2
-RANDOM = 3
+ALTERNATING = 3
 ON = 1
 OFF = 0
 
@@ -139,9 +139,10 @@ def modechange(data):
 
     if data in validModes:
         logging.debug("Valid mode")
-        #current_mode = TrainData.train_state_dict["mode"]
-        current_mode = TrainDatabase.get_item("mode")
+        
+        current_mode = TrainDatabase.get_item("current_mode")
         logging.debug("Current mode: " + str(current_mode))
+        
         # if data is the same as current_mode, just return
         if str(data) == str(current_mode):
             logging.debug("MODE is the same")
@@ -149,12 +150,9 @@ def modechange(data):
         else:
             logging.debug("Changing the mode!")
             #operating_mode(data)  #needs to be added!!!!
-            #update_state_object(TrainData, mode=data)
-            result = TrainDatabase.update_record("mode", int(data)) #want it as an integer
-            print(f"Result from mode update:  {result}")
-           
+            result = TrainDatabase.update_record("current_mode", int(data)) #want it as an integer
+            print(f"Result from mode update:  {result}")       
             
-        
     return "OK"
 
 
@@ -895,7 +893,7 @@ def update_function():
     print("Wemo state is: ", state, file=sys.stderr) 
     logging.info("Wemo state is: %s", state)
     
-    #current_mode = TrainDatabase.get_item("mode")
+    #current_mode = TrainDatabase.get_item("current_mode")
     
     current_wemo_state = TrainDatabase.get_item("current_wemo_state")
     if str(state) != str(current_wemo_state):  #power state changed
@@ -923,18 +921,11 @@ def update_function():
     msg = "{'type': 'power_status', 'value': \"" + str(TrainDatabase.get_item("current_wemo_state")) + "\"}"    
     outputFunction(str(msg))
 
-    current_mode = TrainDatabase.get_item("mode")
+    current_mode = TrainDatabase.get_item("current_mode")
     msg = "{'type': 'mode', 'value': \"" + str(current_mode) + "\"}"    
     outputFunction(str(msg))
     
-    #update loop count
-    #current_time = int(time.time())
-    #TrainData.loops_left = max_loop_count - loop_count
-    #if current_time > max_time_count  or loop_count >= max_loop_count
-    #if (current_time > max_time_count) or (TrainData.loops_left < 0):
-    #    print("LOOP OVER...", file=sys.stderr)
-    #    end_loop()
-        
+    
     msg = "\'%s\'" % (TrainDatabase.get_item("loops_left"))
     msg = "{'type': 'loops_left', 'value': " + msg + "}"
     outputFunction(str(msg))
@@ -1011,6 +1002,13 @@ def section_control(section, state):
 
 
 
+def train_half_speed():
+    """ Slows the train to 50% power. """
+    motorcontroller_wrapper("slow_half")
+    return 0
+
+    
+    
 def train_slow_stop():
     ''' Slows the train to 50% power and then stops
     '''
@@ -1020,20 +1018,22 @@ def train_slow_stop():
 
 
 def new_loop_count():
-    # Get new randomized loop count
-    TrainDatabase.max_loop_count = returnRandom(3, 5) #min,max
-    TrainDatabase.loops_left = TrainDatabase.max_loop_count
-    msg = "\'%s\'" % (TrainDatabase.max_loop_count)
+    """Get new randomized loop count
+    max_loop_count is set here and doesn't change until the next loop
+    loops_left is decremented each loop
+    """
+    max_loop_count = TrainDatabase.max_loop_count = returnRandom(3, 5) #min,max
+    TrainDatabase.loops_left = max_loop_count
+    msg = "\'%s\'" % (max_loop_count)
     msg = "{'type': 'loops_left', 'value': " + msg + "}"
     outputFunction(str(msg))
     time_count = int(time.time())
-    TrainDatabase.max_time_count = (TrainDatabase.max_loop_count * 60) + time_count #1 minute per loop in seconds
+    TrainDatabase.max_time_count = (max_loop_count * 60) + time_count #1 minute per loop in seconds
     
-    #print("Looping %s times." % (TrainData.max_loop_count), file=sys.stderr)
-    logging.info("Looping %s times.", TrainDatabase.max_loop_count)
+    #print("Looping %s times." % (max_loop_count), file=sys.stderr)
+    logging.info("Looping %s times.", max_loop_count)
 
-    #update_state_object(TrainData, loops_left = TrainData.max_loop_count)
-    result = TrainDatabase.update_record("loops_left", TrainDatabase.max_loop_count)
+    result = TrainDatabase.update_record("loops_left", max_loop_count)
     
     return 0
 
@@ -1045,8 +1045,8 @@ def start_new_loop():
      gets new_loop_count, turns on the track sections,
      starts the motor_controller and updates the database
     '''
-    print("NEW loop.", file=sys.stderr)
-    logging.info("NEW loop.")
+    print("Starting NEW loop.", file=sys.stderr)
+    logging.info("Starting NEW loop.")
 
     new_loop_count()
     
@@ -1073,18 +1073,164 @@ def start_new_loop():
     #loop_timer_thread.start()
     
     return True
+
+
+def park_trolley():
+    logging.info("In park_trolley.")
+    print("In park_trolley.")
+    
+    return 0
+
     
 
+''' State Changes
+    PowerOn -> PowerOff
+    PowerOff -> PowerOn
+    Loop -> Trolley
+    Trolley -> Loop
+'''    
 
-def loop_thread(event): 
-    logging.debug("Starting loop thread.")
-    #print("Starting loop thread.")
+def do_loop(previous_mode, current_mode, set_mode):
+    logging.debug("In do_loop.")
+    
+    if int(current_mode) != LOOP: 
+        #just to be safe
+        logging.info("Incorrect current_mode [%s] for do_loop.", str(current_mode))
+        return 0
+        
+        
+    if int(previous_mode) == OFF:
+        logging.debug("Starting a new loop from do_loop.")
+        start_new_loop()
+    else: #previous_mode is LOOP or TROLLEY
+        if int(previous_mode) == LOOP:
+            # state =  Loop -> Loop 
+            logging.debug("Already in loop mode.")
+            print("Already in loop mode.")   
+            pass #do nothing
+        elif int(previous_mode) == TROLLEY:
+            # state = Trolley -> Loop
+            # trolley should alread be stopped, but double check.
+            park_trolley()
+            start_new_loop()
+        else:
+            logging.error("Incorrect previous mode [%s] given in do_loop.", previous_mode)
+            
+    return 0
+    
+    
+def train_thread(event): 
+    logging.debug("Starting train thread.")
+    #print("Starting train thread.")
 
     while not event.is_set():  #if event is set, everything stops
-        logging.debug("In loop thread.")
-        #print("In loop thread.")
+        logging.debug("In train thread.")
+        #print("In train thread.")
+        
+        current_mode = TrainDatabase.get_item("current_mode")
+        logging.debug("CURRENT MODE: " + str(current_mode))
 
-        current_mode = TrainDatabase.get_item("mode")
+        previous_mode = TrainDatabase.get_item("previous_mode")
+        logging.debug("Previous mode: " + str(previous_mode))
+        #print("Previous mode: " + str(previous_mode))
+        
+        set_mode = TrainDatabase.get_item("set_mode")
+        logging.debug("Set mode: " + str(set_mode))
+
+        #IF POWER ISN'T ON DON'T DO ANYTHING
+        power_status = TrainDatabase.get_item("power")
+        if int(power_status) == OFF:  #power is OFF
+            print("No power, returning from train_thread.")
+            logging.debug("No power, returning from train_thread.")
+            if (int(power_status) == 0) and (int(current_mode) == LOOP) and (previous_mode == LOOP):
+                previous_mode = 0 #this will cause a new loop when power comes back
+                result = TrainDatabase.update_record("previous_mode", OFF)
+        else: #power is ON
+            if int(current_mode) == LOOP:
+                do_loop(previous_mode, current_mode, set_mode)
+        
+        time.sleep(5) #wait 5 seconds between each check
+        
+    print("train_thread is stopping gracefully.")
+    return 0   
+    
+
+''' new/good version
+def train_thread(event): 
+    logging.debug("Starting train thread.")
+    #print("Starting train thread.")
+
+    while not event.is_set():  #if event is set, everything stops
+        logging.debug("In train thread.")
+        #print("In train thread.")
+        
+        current_mode = TrainDatabase.get_item("current_mode")
+        logging.debug("CURRENT MODE: " + str(current_mode))
+
+        previous_mode = TrainDatabase.get_item("previous_mode")
+        logging.debug("Previous mode: " + str(previous_mode))
+        #print("Previous mode: " + str(previous_mode))
+        
+        
+        #IF POWER ISN'T ON DON'T DO ANYTHING
+        power_status = TrainDatabase.get_item("power")
+        if int(power_status) == OFF:  #power is OFF
+            print("No power, returning from train_thread.")
+            logging.debug("No power, returning from train_thread.")
+            if (int(power_status) == 0) and (int(current_mode) == LOOP) and (previous_mode == LOOP):
+                previous_mode = 0 #this will cause a new loop when power comes back
+                result = TrainDatabase.update_record("previous_mode", OFF)
+        else: #power is ON
+
+            if (int(current_mode) == LOOP): #enter loop mode
+                if int(previous_mode) == LOOP: #already looping
+                    # state =  Loop -> Loop 
+                    logging.debug("Already in loop mode.")
+                    print("Already in loop mode.")   
+                    pass #do nothing
+                    
+                elif int(previous_mode) == TROLLEY: #switching from mode TROLLEY to mode LOOP
+                    logging.debug("Parking at the trolley station.")
+                    print("Parking at the trolley station.")
+                    #park_trolley()
+                    
+                else: #start a new loop
+                    start_new_loop()
+                    
+            elif (int(current_mode) == TROLLEY): #entering trolley mode
+                if int(previous_mode) == TROLLEY: #already trollying
+                    logging.debug("Already in trolley mode.")
+                    print("Already in trolley mode.")
+                    pass #do nothing
+                    
+                elif int(previous_mode) == LOOP: #switching from LOOP to TROLLEY
+                    logging.debug("Parking at the loop station.")
+                    print("Parking at the loop station.")
+                    #park_loop()
+                    
+                else: #start new trolley
+                    #start_new_trolley()
+                    pass
+              
+              
+        time.sleep(5) #wait 5 seconds between each check
+        
+    print("train_thread is stopping gracefully.")
+    return 0      
+'''
+
+                    
+'''
+#old version
+def train_thread(event): 
+    logging.debug("Starting train thread.")
+    #print("Starting train thread.")
+
+    while not event.is_set():  #if event is set, everything stops
+        logging.debug("In train thread.")
+        #print("In train thread.")
+
+        current_mode = TrainDatabase.get_item("current_mode")
         logging.debug("CURRENT MODE: " + str(current_mode))
 
         previous_mode = TrainDatabase.get_item("previous_mode")
@@ -1103,7 +1249,7 @@ def loop_thread(event):
                     #park_trolley()
 
 
-                if int(previous_mode) == LOOP: #already doing loop mode
+                elif int(previous_mode) == LOOP: #already doing loop mode
                     logging.debug("Already in loop mode.")
                     print("Already in loop mode.")   
                     pass
@@ -1112,34 +1258,36 @@ def loop_thread(event):
                     
                     
         else:
-            print("No power, returning from loop_thread.")
-            logging.debug("No power, returning from loop_thread.")
+            print("No power, returning from train_thread.")
+            logging.debug("No power, returning from train_thread.")
             if (int(power_status) == 0) and (int(current_mode) == LOOP) and (previous_mode == LOOP):
                 previous_mode = 0 #this will cause a new loop when power comes back
                 result = TrainDatabase.update_record("previous_mode", OFF)
             
         time.sleep(5)
         
-    print("loop_thread is stopping gracefully.")
+    print("train_thread is stopping gracefully.")
     return 0
+'''
 
 
 '''
-def loop_thread(event): 
+#older version
+def train_thread(event): 
     #previous_mode = TrainDatabase.get_item("previous_mode")
     
-    #current_mode = TrainDatabase.get_item("mode")
+    #current_mode = TrainDatabase.get_item("current_mode")
     #previous_mode = current_mode   #same thing when starting, no change
     #counter = 0
 
-    logging.debug("Starting loop thread.")
-    #print("Starting loop thread.")
+    logging.debug("Starting train thread.")
+    #print("Starting train thread.")
 
     while not event.is_set():  #if event is set, everything stops
-        logging.debug("In loop thread.")
-        #print("In loop thread.")
+        logging.debug("In train thread.")
+        #print("In train thread.")
 
-        current_mode = TrainDatabase.get_item("mode")
+        current_mode = TrainDatabase.get_item("current_mode")
         logging.debug("CURRENT MODE: " + str(current_mode))
 
         previous_mode = TrainDatabase.get_item("previous_mode")
@@ -1189,13 +1337,13 @@ def loop_thread(event):
                     #loop_timer_thread = threading.Thread(target=loop_timer, args=((max_loop_count * 60),))
                     #loop_timer_thread.start()
         else:
-            print("No power, returning from loop_thread.")
+            print("No power, returning from train_thread.")
             if (int(power_status) == 0) and (int(current_mode) == LOOP) and (previous_mode == 1):
                 previous_mode = 0 #this will cause a new loop when power comes back
             
         time.sleep(5)
         
-    print("loop_thread is stopping gracefully.")
+    print("train_thread is stopping gracefully.")
     return 0
 '''   
     
@@ -1260,11 +1408,13 @@ def hall_sensor1_callback(channel):
 	logging.info("Good Hall_sensor1")
 	logging.info("") #blank
 	
+	epoch_time = int(time.time())
+	result = TrainDatabase.update_record("mag_sensor5_ts", epoch_time)
+	
 	#add logic here to deal with extra "good" hits
 	time.sleep(1) #wait 1 second in between valid hits
 		
-	epoch_time = int(time.time())
-	result = TrainDatabase.update_record("mag_sensor5_ts", epoch_time)
+	
 	
 	msg = "hall_sensor1 at " + str(epoch_time)
 	msg = "{'type': 'message', 'value': " + "\'" + msg + "\'" + "}"
@@ -1422,8 +1572,8 @@ if __name__ == "__main__":
     #create_thread('trolley_thread', trolley_thread)
 
     # Start thread to check for loop state
-    loop_thread = threading.Thread(target=loop_thread, args=(stop_event,), name="LoopThread")
-    loop_thread.start()
+    train_thread = threading.Thread(target=train_thread, args=(stop_event,), name="LoopThread")
+    train_thread.start()
     
     
     while True:
