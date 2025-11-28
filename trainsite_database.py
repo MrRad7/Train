@@ -97,8 +97,12 @@ class TrainDatabaseClass():
         print(f"Updating {name} to  {value}")
         
         #first retrieve the record based on name
-        record = self.retrieve_record(name)
-        
+        try:
+            record = self.retrieve_record(name)
+        except Excepttion as e:
+            print(f"Exception occured in update_record for {name} {value}  {e}")
+            return False
+            
         if record is not None:
             #logging.debug("Waiting for a lock...")
             #self.lock.acquire()
@@ -140,8 +144,12 @@ class TrainDatabaseClass():
     def get_item(self,name):
         ''' Get an item from the database and return its value in original form '''
         #first retrieve the record based on name
-        record = self.retrieve_record(name)
-        
+        try:
+            record = self.retrieve_record(name)
+        except Exception as e:
+            print(f"Exception occured in get_item for {name}  {e}")
+            return None
+                
         if record is not None:
             record_name = record.name
             record_type = record.type
