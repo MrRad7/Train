@@ -1004,9 +1004,14 @@ def section_control(section, state):
 
 def train_half_speed():
     """ Slows the train to 50% power. """
-    motorcontroller_wrapper("slow_half")
+    motorcontroller_wrapper("half_speed")
     return 0
 
+
+def train_75_speed():
+    """ Slows the train to 75% power. """
+    motorcontroller_wrapper("75_speed")
+    return 0
     
     
 def train_slow_stop():
@@ -1148,6 +1153,19 @@ def train_thread(event):
         else: #power is ON
             if int(current_mode) == LOOP:
                 do_loop(previous_mode, current_mode, set_mode)
+            elif int(current_mode) == TROLLEY:
+                # nothing yet
+                logging.debug("Choosing TROLLEY in train_loop.")
+                #do_trolley(previous_mode, current_mode, set_mode)
+                pass
+            elif int(current_mode) == ALTERNATING:
+                # nothing yet
+                logging.debug("Choosing ALTERNATING in train_loop.")
+                # park current mode and then swap modes
+                pass
+            else:
+                logging.error("Invalid current_mode [%s] in train_thread.", str(current_mode))
+                print(f"Invalid current_mode {current_mode} in train_thread.")
         
         time.sleep(5) #wait 5 seconds between each check
         
@@ -1349,6 +1367,7 @@ def train_thread(event):
     
 
 def park_loop():
+    """ park_loop() is called when swithing from LOOP mode to TROLLEY mode. """
     #global max_loop_count
     #global max_time_count
     #global loops_left
@@ -1378,6 +1397,81 @@ def park_loop():
         
     return 0
     
+
+
+#end_loop is run when loops_left <= 0  or loop_time expires
+def end_loop():
+    """ end_loop is called when loops_left <= 0  or loop_time expires
+    Stops the train at the station for a given amount of time after
+    cutting the power in half.
+    """
+    
+    logging.debug("In end_loop()")
+    print(f"In end_loop()")
+    
+    # get the current settings
+    current_mode = TrainDatabase.get_item("current_mode")
+    logging.debug("CURRENT MODE: " + str(current_mode))
+
+    previous_mode = TrainDatabase.get_item("previous_mode")
+    logging.debug("Previous mode: " + str(previous_mode))
+  
+    set_mode = TrainDatabase.get_item("set_mode")
+    logging.debug("Set mode: " + str(set_mode))
+
+    if (current_mode == LOOP): #loop only mode
+        print("Restarting mode LOOP", file=sys.stderr)
+        logging.debug("Restarting mode LOOP")
+
+        #remove loop_timer_thread
+        #join_loop_timer_thread()   #maybe later....
+        
+            
+        #stop section 1
+        logging.debug("Loop - Stopping train at the station.")
+        print("Loop - Stopping train at the station.")
+        section_control(1,"OFF") #the station
+        
+        #cut power 
+        logging.debug("Cutting power to 75%.")
+        print("Cutting power to 75%.")
+        train_75_speed() 
+        #motorcontroller_wrapper("half_speed")
+         
+
+        #wait 60 seconds - this is like a station stop.
+        #wait 60 seconds for the train to arrive and pickup/drop-off passengers.
+        #give the train time to slow down and reach the station.
+        time.sleep(120)
+
+        #call operating_mode()  to restart   - not sure why
+        #logging.debug("Calling operating_mode()")
+        #operating_mode()
+        
+        logging.debug("Loop - Setting previous_mode = 0.")
+        #previous_mode = 0 
+        #result = TrainDatabase.update_record("previous_mode", OFF) #this should cause loop_thread to start a new loop
+        start_new_loop()
+
+    elif (mode == TROLLEY):
+        #print("Restaring mode TROLLEY", file=sys.stderr)
+        logging.debug("Restaring mode TROLLEY")
+        #determine direction
+        #if direction = A, wait until direction switches to B
+        #stop sections 2 and 3
+        #wait 60 seconds
+        #call operating_mode() to restart
+
+    elif (mode == 3):
+        print("Restaring mode ALTERNATING", file=sys.stderr)
+        logging.debug("Restaring mode ALTERNATING")
+        #alernating between modes 1 and 2
+        #determine which mode
+    else:
+        logging.error("end+loop():  Cannot determine mode.")
+    
+
+    return 0
 
 
 #hall_sensor1 is at the start of the straight	
@@ -1451,8 +1545,7 @@ def hall_sensor1_callback(channel):
 	if (TrainDatabase.get_item("loops_left") <= 0):
             #print("LOOP OVER...", file=sys.stderr)
             logging.info("LOOP OVER...")
-            # SLOW DOWN TRAIN
-            #end_loop(TrainData)  #disabled for now, needs debugging!
+            end_loop()  #disabled for now, needs debugging!
 	
 	return 0
 	
